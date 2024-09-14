@@ -4260,6 +4260,7 @@ dependencies = [
  "tracing-appender",
  "tracing-error",
  "tracing-subscriber",
+ "ulid",
  "uuid",
 ]
 

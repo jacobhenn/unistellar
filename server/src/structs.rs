@@ -1,10 +1,49 @@
 //! Structure definitions that map onto the database schema.
 
-use serde::{Deserialize, Serialize};
+use std::fmt::Display;
 
-use surrealdb::sql::{Id, Thing};
+use surrealdb::sql::Thing;
 
-use uuid::Uuid;
+use ulid::Ulid;
+
+/// See [`USId`]
+#[derive(serde::Deserialize)]
+struct IdInner {
+    #[serde(rename = "String")]
+    id: Ulid,
+}
+
+/// UniStellar ID - basically just a (ULID)[https://github.com/ulid/spec]. This is a wrapper
+/// to make it easier to deal with SurrealDB IDs since we know that everything is going to be
+/// ULIDs.
+///
+/// Basically, SurrealDB is set up so that record IDs are arbitrary strings with namespace
+/// specifiers, so their deserialized structure is quite nested and awkward to deal with. However,
+/// we would like to use the record IDs for our user ids, university ids, etc. because it would
+/// be even more awkward to have two different IDs for each thing. The solution I'm taking is to
+/// make this helper struct with an asymmetric implementation of `Serialize` and `Deserialize` that
+/// "forgets" all of the awkward structure of SurrealDB IDs when sending API responses, but still
+/// correctly deserializes them from the results of database queries.
+#[derive(serde::Deserialize)]
+pub struct USId {
+    id: IdInner,
+}
+
+impl serde::Serialize for USId {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let s = format!("{}", self.id.id);
+        serializer.serialize_str(&s)
+    }
+}
+
+impl USId {
+    fn uuid(self) -> Ulid {
+        self.id.id
+    }
+}
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct Name {
@@ -15,10 +54,8 @@ pub struct Name {
 /// An individual user of UniStellar.
 #[derive(serde::Deserialize, serde::Serialize)]
 pub struct User {
-    /// Unique user ID. This is separate from the user's _record id_ in SurrealDB.
-    // TODO: possibly figure out a way to deal with the record ids nicer so this isn't necessary.
-    pub user_id: Uuid,
+    pub id: USId,
     pub name: Name,
-    pub university: Uuid,
+    pub university: USId,
     pub grad_year: i32,
 }
