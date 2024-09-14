@@ -1,13 +1,6 @@
 #[macro_use]
 extern crate rocket;
 
-mod db;
-mod err;
-mod routes;
-mod structs;
-
-use err::LogMapErr;
-
 use std::{
     fmt::Debug,
     fs,
@@ -17,9 +10,12 @@ use std::{
 };
 
 use clap::Parser;
+
 use color_eyre::eyre::{bail, OptionExt, Result, WrapErr};
 
 use dirs_next;
+
+use err::LogMapErr;
 
 use surrealdb::{
     engine::{
@@ -30,10 +26,15 @@ use surrealdb::{
     Error, Surreal,
 };
 
-use tracing::{debug, info, instrument};
+use tracing::{debug, info, instrument, level_filters::LevelFilter};
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
+
+mod db;
+mod err;
+mod routes;
+mod structs;
 
 const APP_NAME: &'static str = "unistellar-server";
 
@@ -138,16 +139,27 @@ fn init_logging(log_to: LogTo) -> Result<WorkerGuard> {
         }
     };
 
-    let fmt_layer = tracing_subscriber::fmt::layer()
+    let env_filter = tracing_subscriber::EnvFilter::builder()
+        .with_default_directive(LevelFilter::DEBUG.into())
+        .from_env_lossy();
+
+    // let fmt_layer = tracing_subscriber::fmt::layer()
+    //     .with_ansi(log_to == LogTo::Stdout)
+    //     .with_writer(log_writer)
+    //     .with_filter(env_filter);
+
+    // let subscriber = tracing_subscriber::Registry::default()
+    //     .with(fmt_layer)
+    //     .with(ErrorLayer::default());
+
+    // tracing::subscriber::set_global_default(subscriber)
+    //     .wrap_err("failed to set global logging subscriber")?;
+
+    tracing_subscriber::fmt()
+        .with_env_filter(env_filter)
         .with_ansi(log_to == LogTo::Stdout)
-        .with_writer(log_writer);
-
-    let subscriber = tracing_subscriber::Registry::default()
-        .with(fmt_layer)
-        .with(ErrorLayer::default());
-
-    tracing::subscriber::set_global_default(subscriber)
-        .wrap_err("failed to set global logging subscriber")?;
+        .with_writer(log_writer)
+        .init();
 
     info!("initialized logging");
 
