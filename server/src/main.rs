@@ -140,7 +140,7 @@ fn init_logging(log_to: LogTo) -> Result<WorkerGuard> {
     };
 
     let env_filter = tracing_subscriber::EnvFilter::builder()
-        .with_default_directive(LevelFilter::DEBUG.into())
+        .with_default_directive(LevelFilter::INFO.into())
         .from_env_lossy();
 
     // let fmt_layer = tracing_subscriber::fmt::layer()
