@@ -191,7 +191,7 @@ async fn main() -> Result<()> {
 
     let _rocket = rocket::build()
         .manage(state)
-        .mount("/", routes![routes::users])
+        .mount("/", routes![routes::users, routes::uni_students])
         .launch()
         .await
         .wrap_err("server failure")?;
