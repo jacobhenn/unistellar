@@ -1,93 +1,188 @@
 #[macro_use]
 extern crate rocket;
 
-use std::{fs, path::PathBuf};
+mod db;
+mod err;
+mod routes;
+mod structs;
 
-use anyhow::{bail, Context, Result};
+use err::LogMapErr;
+
+use std::{
+    fmt::Debug,
+    fs,
+    net::SocketAddr,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
+
+use clap::Parser;
+use color_eyre::eyre::{bail, OptionExt, Result, WrapErr};
 
 use dirs_next;
 
 use surrealdb::{
-    engine::remote::ws::{Client, Ws},
+    engine::{
+        local::{Db, Mem},
+        remote::ws::{Client, Ws},
+    },
     opt::auth::Root,
     Error, Surreal,
 };
 
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_subscriber::util::SubscriberInitExt;
+use tracing_error::ErrorLayer;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
-const APP_NAME: &'static str = "unistellar";
+const APP_NAME: &'static str = "unistellar-server";
 
-const DB_ROOT_PASS: &'static str = include_str!(".db-root-pass");
+/// A location to output logging.
+#[derive(clap::ValueEnum, Debug, Clone, PartialEq, Eq)]
+enum LogTo {
+    /// Print logging to the console through stdout. This is the default in debug mode.
+    Stdout,
 
-#[get("/")]
-fn hello() -> &'static str {
-    "Hello, world!"
+    /// Write logging to a file (by default, $XDG_DATA_DIR/unistellar-server/logs) This is the
+    /// default in release mode.
+    File,
 }
 
-async fn db_connect() -> Result<Surreal<Client>> {
-    let db = Surreal::new::<Ws>("localhost::8000")
-        .await
-        .context("could not connect to the database")?;
-
-    db.signin(Root {
-        username: "root",
-        password: DB_ROOT_PASS,
-    })
-    .await?;
-
-    Ok(db)
+impl Default for LogTo {
+    fn default() -> Self {
+        if cfg!(debug_assertions) {
+            Self::Stdout
+        } else {
+            Self::File
+        }
+    }
 }
 
-fn get_data_dir() -> Result<PathBuf> {
-    let mut data_dir_path = dirs_next::data_dir().context("could not locate data directory")?;
+/// UniStellar server.
+#[derive(clap::Parser, Debug)]
+struct Args {
+    /// WebSocket address + port to connect to SurrealDB.
+    #[arg(long)]
+    db_addr: SocketAddr,
+
+    /// Where to output logs. If absent, defaults to `stdout` if compiled in debug mode or `file`
+    /// if compiled in release mode.
+    #[arg(value_enum, long)]
+    log_to: Option<LogTo>,
+}
+
+/// If the given path exists and is a directory, do nothing. If the given path does not exist,
+/// attempt to create a new directory with that path.
+///
+/// # Errors
+///
+/// - The given path exists but is not a directory
+/// - Failed to create a new directory with the given path (e.g. because a parent directory doesn't
+/// exist)
+#[instrument]
+fn ensure_dir_exists(path: impl AsRef<Path> + Debug) -> Result<()> {
+    let path = path.as_ref();
+
+    if !path.exists() {
+        fs::create_dir(&path).wrap_err_with(|| format!("failed to create directory {path:?}"))?;
+    } else if !path.is_dir() {
+        bail!("{path:?} exists but is not a directory");
+    }
+
+    Ok(())
+}
+
+/// Get a path to an assigned data directory for this application (cross-platform).
+///
+/// On Linux, returns "~/.local/share/unistellar-server".
+#[instrument]
+fn get_data_dir_path() -> Result<PathBuf> {
+    let mut data_dir_path = dirs_next::data_dir().ok_or_eyre("could not locate data directory")?;
     data_dir_path.push(APP_NAME);
 
-    if !data_dir_path.exists() {
-        fs::create_dir(&data_dir_path)?;
-    } else if !data_dir_path.is_dir() {
-        bail!(
-            "path to {APP_NAME} data directory ({data_dir_path:?}) exists but is not a directory"
-        );
-    }
+    ensure_dir_exists(&data_dir_path)?;
 
     Ok(data_dir_path)
 }
 
-fn init_logging() -> Result<WorkerGuard> {
-    let mut log_file_path = get_data_dir()?;
+/// Initialize asynchronous logging to the given destination type. The returned [`WorkerGuard`]
+/// is an RAII guard which controls destruction of the resource handle and log queue used by the
+/// worker thread, and it is returned so that it is only dropped when `main`'s scope ends.
+///
+/// If compiled in release mode, by default the logs will be written to files in the logging
+/// directory timestamped to the instant logging was initialized - e.g. "~/.local/share/
+/// unistellar-server/logs/2024-09-12T22:52:01.259739913+00:00.log"
+///
+/// Additionally, sets up span tracing to improve error messages.
+#[instrument]
+fn init_logging(log_to: LogTo) -> Result<WorkerGuard> {
+    let (log_writer, guard) = match log_to {
+        LogTo::Stdout => tracing_appender::non_blocking(std::io::stdout()),
+        LogTo::File => {
+            let mut log_file_path = get_data_dir_path()?;
+            log_file_path.push("logs");
 
-    let now = chrono::Utc::now();
-    log_file_path.push(format!("{}.log", now.to_rfc3339()));
+            ensure_dir_exists(&log_file_path)?;
 
-    if log_file_path.exists() {
-        bail!("timestamped log file path {log_file_path:?} already exists; this is weird");
-    }
+            let now = chrono::Utc::now();
+            log_file_path.push(format!("{}.log", now.to_rfc3339()));
 
-    let log_file = fs::File::create(log_file_path).context("failed to create log file")?;
+            if log_file_path.exists() {
+                panic!("timestamped log file path {log_file_path:?} already exists");
+            }
 
-    let (log_writer, guard) = tracing_appender::non_blocking(log_file);
+            let log_file = fs::File::create(&log_file_path)
+                .wrap_err_with(|| format!("failed to create log file at {log_file_path:?}"))?;
 
-    tracing_subscriber::fmt()
-        .with_ansi(false)
-        .with_writer(log_writer)
-        .init();
+            tracing_appender::non_blocking(log_file)
+        }
+    };
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
+        .with_ansi(log_to == LogTo::Stdout)
+        .with_writer(log_writer);
+
+    let subscriber = tracing_subscriber::Registry::default()
+        .with(fmt_layer)
+        .with(ErrorLayer::default());
+
+    tracing::subscriber::set_global_default(subscriber)
+        .wrap_err("failed to set global logging subscriber")?;
 
     info!("initialized logging");
 
     Ok(guard)
 }
 
+/// Shared server state available to all route handlers.
+struct State<C: surrealdb::Connection> {
+    /// A connection to the main database.
+    db: Surreal<C>,
+}
+
 #[rocket::main]
-async fn main() -> Result<(), anyhow::Error> {
-    let _guard = init_logging()?;
+async fn main() -> Result<()> {
+    // install custom error handler to improve error messages
+    color_eyre::install()?;
+
+    // parse command-line arguments
+    let args = Args::parse();
+
+    let _guard = init_logging(args.log_to.unwrap_or_default())?;
+
+    // connect to the database
+    let db = db::connect(args.db_addr).await?;
+
+    let state = State { db };
+
+    info!("launching server");
 
     let _rocket = rocket::build()
-        .mount("/", routes![hello])
+        .manage(state)
+        .mount("/", routes![routes::users])
         .launch()
         .await
-        .context("could not launch server")?;
+        .wrap_err("server failure")?;
 
     Ok(())
 }
