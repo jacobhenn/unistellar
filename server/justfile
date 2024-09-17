@@ -1,0 +1,13 @@
+run-server:
+    cargo run -- --db-addr 127.0.0.1:8000
+
+run-db:
+    surreal start rocksdb://~/.local/share/unistellar/db -A -b 127.0.0.1:8000
+
+surql:
+    surreal sql --endpoint http://127.0.0.1:8000 --namespace unistellar --database main --pretty
+        
+import file:
+    surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main {{file}}
+
+

@@ -56,6 +56,8 @@ pub struct Name {
 pub struct User {
     pub id: USId,
     pub name: Name,
+    pub username: String,
     pub university: USId,
+    pub major: USId,
     pub grad_year: i32,
 }

@@ -40,9 +40,24 @@ impl<'a> FromParam<'a> for UlidParam {
 
 /// Route "/user/<id>": data of user with a given user id. If a user with the given ID does
 /// not exist, returns 404.
+///
+/// Example:
+/// ```json
+/// {
+///   "id": "01J7YZ7MC3P44547KT11KHXGJV",
+///   "name": {
+///     "first": "Jacob",
+///     "last": "Henn"
+///   },
+///   "username": "jacobhenn",
+///   "university": "01J7YZ7MBVRK9B50WM6E6ZABJ0",
+///   "major": "01J7YZ7MBXM1C8R69K8Y087K0C",
+///   "grad_year": 2026
+/// }
+/// ```
 #[instrument(skip(state))]
 #[get("/user/<id_param>")]
-pub async fn users(
+pub async fn user(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
 ) -> Result<String, Status> {
@@ -58,10 +73,69 @@ pub async fn users(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// Route "/uni/<id>/students": list of student IDs which attend the given university. If the given
-/// university ID does not exist, returns 404.
+/// Route "/user/<id>/following": list of user IDs that the given user is following.
+/// If a user with the given id does not exist, returns 404.
+///
+/// Example:
+/// ```json
+/// ["01J7YXMV1FSVAERRYEPR93NRX9","01J7YXMV1FZ94VHC13RCTRZM09"]
+/// ```
 #[instrument(skip(state))]
-#[get("/uni/<id_param>/students")]
+#[get("/user/<id_param>/following")]
+pub async fn user_following(
+    state: &rocket::State<State<Client>>,
+    id_param @ UlidParam(id): UlidParam,
+) -> Result<String, Status> {
+    let query = format!("SELECT VALUE out FROM follows WHERE in=user:{id}");
+
+    let user_ids: Vec<USId> = state
+        .db
+        .query(query)
+        .await
+        .and_then(|mut resp| resp.take(0))
+        .log_map_err(|_| Status::InternalServerError)?;
+
+    Ok(serde_json::to_string(&user_ids)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// Route "/user/<id>/followers": list of user IDs that follow the given user.
+/// If a user with the given id does not exist, returns 404.
+///
+/// Example:
+/// ```json
+/// ["01J7YXMV1FSVAERRYEPR93NRX9","01J7YXMV1FZ94VHC13RCTRZM09"]
+/// ```
+#[instrument(skip(state))]
+#[get("/user/<id_param>/followers")]
+pub async fn user_followers(
+    state: &rocket::State<State<Client>>,
+    id_param @ UlidParam(id): UlidParam,
+) -> Result<String, Status> {
+    let query = format!("SELECT VALUE in FROM follows WHERE out=user:{id}");
+
+    let user_ids: Vec<USId> = state
+        .db
+        .query(query)
+        .await
+        .and_then(|mut resp| resp.take(0))
+        .log_map_err(|_| Status::InternalServerError)?;
+
+    Ok(serde_json::to_string(&user_ids)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// Route "/university/<id>/students": list of student IDs which attend the given university. If the given
+/// university ID does not exist, returns 404.
+///
+/// Example:
+/// ```json
+/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// ```
+#[instrument(skip(state))]
+#[get("/university/<id_param>/students")]
 pub async fn uni_students(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,

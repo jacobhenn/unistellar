@@ -1,39 +1,84 @@
-LET $cpp_id = rand::ulid();
-LET $lu_id = rand::ulid();
+// --------------------------------------------------------
+// Universities
 
-CREATE university SET
-	id = $cpp_id,
+LET $cpp = (CREATE ONLY university:ulid() SET
 	name = "Cal Poly Pomona",
 	location.country = "US",
 	location.subdivision = "CA",
 	location.coordinates = (34.056389, -117.821667)
-;
+).id;
 
-CREATE university SET
-	id = $lu_id,
+LET $lu = (CREATE ONLY university:ulid() SET
 	name = "Lancaster University",
 	location.country = "GB",
 	location.subdivision = "LAN",
 	location.coordinates = (54.010278, -2.785556)
-;
+).id;
 
-LET $jacob_id = rand::ulid();
-LET $tigi_id = rand::ulid();
+// --------------------------------------------------------
+// Majors
 
-CREATE user SET
-	id = $jacob_id,
+let $math = (CREATE ONLY major:ulid() SET name = "Mathematics").id;
+let $cs = (CREATE ONLY major:ulid() SET name = "Computer Science").id;
+
+// --------------------------------------------------------
+// Courses
+
+let $cpp_mat4170 = (CREATE ONLY course:ulid() SET name = "Abstract Algebra I").id;
+let $cpp_sta2100 = (CREATE ONLY course:ulid() SET name = "Intro to Statistics").id;
+let $cpp_phl2040 = (CREATE ONLY course:ulid() SET name = "Ethical Problems in Contemporary Life").id;
+let $cpp_bio1110 = (CREATE ONLY course:ulid() SET name = "Intro to Life Science").id;
+let $cpp_cs3750 = (CREATE ONLY course:ulid() SET name = "Computers and Society").id;
+let $cpp_cs2410 = (CREATE ONLY course:ulid() SET name = "Fundamentals of Data Science").id;
+let $cpp_cs2600 = (CREATE ONLY course:ulid() SET name = "Systems Programming").id;
+
+// --------------------------------------------------------
+// Users
+
+let $jacob = (CREATE ONLY user:ulid() SET
 	name.first = 'Jacob',
 	name.last = 'Henn',
 	username = 'jacobhenn',
-	university = type::thing("university", $cpp_id),
+	university = $cpp,
+	major = $math,
 	grad_year = 2026
-;
+).id;
 
-CREATE user SET
-	id = $tigi_id,
+let $amy = (CREATE ONLY user:ulid() SET
+	name.first = 'Amy',
+	name.last = 'Ngyuen',
+	username = 'choobipanda',
+	university = $cpp,
+	major = $cs,
+	grad_year = 2026
+).id;
+
+let $tigi = (CREATE ONLY user:ulid() SET
 	name.first = 'Tigius',
 	name.last = 'Chubius',
 	username = 'tigi',
-	university = type::thing("university", $lu_id),
-	grad_year = 2026 // ?
-;
+	university = $lu,
+	major = $cs,
+	grad_year = 2026
+).id;
+
+// --------------------------------------------------------
+// Course enrollment relationships
+
+RELATE $jacob->takes_course->$cpp_mat4170;
+RELATE $jacob->takes_course->$cpp_sta2100;
+RELATE $jacob->takes_course->$cpp_phl2040;
+RELATE $jacob->takes_course->$cpp_bio1110;
+
+RELATE $amy->takes_course->$cpp_cs3750;
+RELATE $amy->takes_course->$cpp_cs2410;
+RELATE $amy->takes_course->$cpp_cs2600;
+RELATE $amy->takes_course->$cpp_bio1110;
+
+// --------------------------------------------------------
+// Follow relationships
+
+RELATE $jacob->follows->$amy;
+RELATE $amy->follows->$jacob;
+RELATE $amy->follows->$tigi;
+RELATE $tigi->follows->$jacob;
