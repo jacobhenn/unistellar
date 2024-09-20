@@ -23,6 +23,8 @@ let $cs = (CREATE ONLY major:ulid() SET name = "Computer Science").id;
 
 // --------------------------------------------------------
 // Courses
+//
+// These would not be automatically populated in production, but input by users
 
 let $cpp_mat4170 = (CREATE ONLY course:ulid() SET name = "Abstract Algebra I").id;
 let $cpp_sta2100 = (CREATE ONLY course:ulid() SET name = "Intro to Statistics").id;
@@ -82,3 +84,11 @@ RELATE $jacob->follows->$amy;
 RELATE $amy->follows->$jacob;
 RELATE $amy->follows->$tigi;
 RELATE $tigi->follows->$jacob;
+
+// --------------------------------------------------------
+// Activity
+
+CREATE activity:ulid() SET
+	user = $jacob,
+	course = $mat_4170
+	assignment = ""

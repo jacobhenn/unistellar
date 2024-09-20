@@ -197,7 +197,8 @@ async fn main() -> Result<()> {
                 routes::user,
                 routes::user_following,
                 routes::user_followers,
-                routes::uni_students
+                routes::uni_students,
+                routes::course_search,
             ],
         )
         .launch()
