@@ -65,7 +65,7 @@ impl<'a> FromParam<'a> for CleanStr<'a> {
 // function is even called, and an error at that point will result in a 404.
 // -------------------------------------------------------------------------------------------------
 
-/// GET "/user/<id>": data of user with a given user ID. If a user with the given ID does
+/// GET "/api/user/<id>": data of user with a given user ID. If a user with the given ID does
 /// not exist, returns 404.
 ///
 /// Example:
@@ -100,7 +100,7 @@ pub async fn user(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/user/<id>/following": list of IDs of users that the given user is following. If a user
+/// GET "/api/user/<id>/following": list of IDs of users that the given user is following. If a user
 /// with the given id does not exist, returns 404.
 ///
 /// Example:
@@ -127,7 +127,7 @@ pub async fn user_following(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/user/<id>/followers": list of IDs of users that follow the given user. If a user with
+/// GET "/api/user/<id>/followers": list of IDs of users that follow the given user. If a user with
 /// the given id does not exist, returns 404.
 ///
 /// Example:
@@ -154,7 +154,7 @@ pub async fn user_followers(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/university/<id>/students": list of IDs of users who attend the given university. If
+/// GET "/api/university/<id>/students": list of IDs of users who attend the given university. If
 /// the given university ID does not exist, returns 404.
 ///
 /// Example:
@@ -213,7 +213,7 @@ where
     Ok(result_ids)
 }
 
-/// GET "/course/search/<search>": list of IDs of courses whose names match the given search string,
+/// GET "/api/course/search/<search>": list of IDs of courses whose names match the given search string,
 /// sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:
@@ -255,7 +255,7 @@ pub async fn course_search(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/user/search/<search>": list of IDs of users whose names match the given search string,
+/// GET "/api/user/search/<search>": list of IDs of users whose names match the given search string,
 /// sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:
@@ -301,7 +301,7 @@ pub async fn user_search(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/uni/search/<search>": list of IDs of universities whose names match the given search
+/// GET "/api/uni/search/<search>": list of IDs of universities whose names match the given search
 /// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:
@@ -335,7 +335,7 @@ pub async fn uni_search(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/major/search/<search>": list of IDs of majors whose names match the given search
+/// GET "/api/major/search/<search>": list of IDs of majors whose names match the given search
 /// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:

@@ -192,7 +192,7 @@ async fn main() -> Result<()> {
     let _rocket = rocket::build()
         .manage(state)
         .mount(
-            "/",
+            "/api",
             routes![
                 routes::user,
                 routes::user_following,
