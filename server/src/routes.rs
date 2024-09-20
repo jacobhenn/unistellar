@@ -1,10 +1,10 @@
 //! Defines API route handlers via Rocket
 
-use crate::structs::{Course, USId};
+use crate::structs::{Course, Name, USId};
 
 use super::{err::LogMapErr, structs::User, State};
 
-use std::{error::Error, fmt::Display, str::FromStr};
+use std::{borrow::Cow, error::Error, fmt::Display, str::FromStr};
 
 use color_eyre::eyre::{ErrReport, OptionExt, WrapErr};
 
@@ -18,7 +18,7 @@ use surrealdb::{
     Surreal,
 };
 
-use tracing::instrument;
+use tracing::{debug, instrument, trace};
 
 use ulid::Ulid;
 
@@ -83,7 +83,7 @@ impl<'a> FromParam<'a> for CleanStr<'a> {
 /// }
 /// ```
 #[instrument(skip(state))]
-#[get("/user/<id_param>")]
+#[get("/user/<id_param>", rank = 1)]
 pub async fn user(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
@@ -183,8 +183,34 @@ pub async fn uni_students(
 
 /// Calculates distance between strings `a` and `b` in a slightly cursed way: computes Levenshtein
 /// distance and subtracts the absolute difference between the lengths
-fn cursed_string_distance(a: &[u8], b: &[u8]) -> i32 {
+fn cursed_string_distance(a: &impl AsRef<[u8]>, b: &impl AsRef<[u8]>) -> i32 {
+    let (a, b) = (a.as_ref(), b.as_ref());
+
     triple_accel::levenshtein_exp(a, b) as i32 - (a.len() as i32 - b.len() as i32).abs()
+}
+
+async fn search_table<T, Key>(
+    db: &Surreal<Client>,
+    query: &str,
+    get_key: impl Fn(&T) -> Key,
+    get_id: impl Fn(&T) -> USId,
+) -> Result<Vec<USId>, Status>
+where
+    T: serde::de::DeserializeOwned,
+    Key: Ord,
+{
+    let mut results: Vec<T> = db
+        .query(query)
+        .await
+        .and_then(|mut resp| resp.take(0))
+        .log_map_err(|_| Status::InternalServerError)?;
+
+    results.sort_by_cached_key(|result| get_key(result));
+
+    let mut result_ids: Vec<USId> = Vec::with_capacity(results.len());
+    result_ids.extend(results.into_iter().map(|result| get_id(&result)));
+
+    Ok(result_ids)
 }
 
 /// GET "/course/search/<search>": list of IDs of courses whose names match the given search string,
@@ -200,27 +226,145 @@ pub async fn course_search(
     state: &rocket::State<State<Client>>,
     search_param @ CleanStr(search): CleanStr<'_>,
 ) -> Result<String, Status> {
-    let query = format!("SELECT * FROM course WHERE name ~ '{search}'");
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct SearchResult {
+        id: USId,
+        name: String,
+        code: String,
+    }
 
-    let mut matching_courses: Vec<Course> = state
-        .db
-        .query(query)
-        .await
-        .and_then(|mut resp| resp.take(0))
-        .log_map_err(|_| Status::InternalServerError)?;
+    let query =
+        format!("SELECT id, name, code FROM course WHERE name ~ '{search}' OR code ~ '{search}'");
 
-    debug!("sorting matching courses by cursed distance");
+    let search_results = search_table::<SearchResult, _>(
+        &state.db,
+        &query,
+        |course| {
+            [&course.name, &course.code]
+                .into_iter()
+                .map(|key| cursed_string_distance(key, &search))
+                .min()
+                .expect("iterator is not empty")
+        },
+        |course| course.id,
+    )
+    .await?;
 
-    matching_courses.sort_by_cached_key(|course| {
-        let res = cursed_string_distance(course.name.as_bytes(), search.as_bytes());
-        debug!("  distance between '{}' and '{search}': {res}", course.name);
-        res
-    });
+    Ok(serde_json::to_string(&search_results)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
 
-    let mut course_ids: Vec<USId> = Vec::with_capacity(matching_courses.len());
-    course_ids.extend(matching_courses.into_iter().map(|course| course.id));
+/// GET "/user/search/<search>": list of IDs of users whose names match the given search string,
+/// sorted in increasing order of [`cursed_string_distance`] with the search string.
+///
+/// Example:
+/// ```json
+/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// ```
+#[instrument(skip(state))]
+#[get("/user/search/<search_param>", rank = 2)]
+pub async fn user_search(
+    state: &rocket::State<State<Client>>,
+    search_param @ CleanStr(search): CleanStr<'_>,
+) -> Result<String, Status> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct SearchResult {
+        id: USId,
+        username: String,
+        name: Name,
+    }
 
-    Ok(serde_json::to_string(&course_ids)
+    let query = format!(
+        "SELECT id, username, name FROM user 
+            WHERE username ~ '{search}' OR (name.first + ' ' + name.last) ~ '{search}'"
+    );
+
+    debug!("query: `{query}`");
+
+    let search_results = search_table::<SearchResult, _>(
+        &state.db,
+        &query,
+        |user| {
+            [&user.username, &user.name.first, &user.name.last]
+                .into_iter()
+                .map(|s| cursed_string_distance(s, &search))
+                .min()
+                .expect("iterator is non-empty")
+        },
+        |user| user.id,
+    )
+    .await?;
+
+    Ok(serde_json::to_string(&search_results)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// GET "/uni/search/<search>": list of IDs of universities whose names match the given search
+/// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
+///
+/// Example:
+/// ```json
+/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// ```
+#[instrument(skip(state))]
+#[get("/uni/search/<search_param>", rank = 2)]
+pub async fn uni_search(
+    state: &rocket::State<State<Client>>,
+    search_param @ CleanStr(search): CleanStr<'_>,
+) -> Result<String, Status> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct SearchResult {
+        id: USId,
+        name: String,
+    }
+
+    let query = format!("SELECT id, name FROM university WHERE name ~ '{search}'");
+
+    let search_results = search_table::<SearchResult, _>(
+        &state.db,
+        &query,
+        |uni| cursed_string_distance(&uni.name, &search),
+        |uni| uni.id,
+    )
+    .await?;
+
+    Ok(serde_json::to_string(&search_results)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// GET "/major/search/<search>": list of IDs of majors whose names match the given search
+/// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
+///
+/// Example:
+/// ```json
+/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// ```
+#[instrument(skip(state))]
+#[get("/major/search/<search_param>", rank = 2)]
+pub async fn major_search(
+    state: &rocket::State<State<Client>>,
+    search_param @ CleanStr(search): CleanStr<'_>,
+) -> Result<String, Status> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct SearchResult {
+        id: USId,
+        name: String,
+    }
+
+    let query = format!("SELECT id, name FROM major WHERE name ~ '{search}'");
+
+    let search_results = search_table::<SearchResult, _>(
+        &state.db,
+        &query,
+        |major| cursed_string_distance(&major.name, &search),
+        |major| major.id,
+    )
+    .await?;
+
+    Ok(serde_json::to_string(&search_results)
         .wrap_err("failed to serialize response")
         .log_map_err(|_| Status::InternalServerError)?)
 }

@@ -26,13 +26,48 @@ let $cs = (CREATE ONLY major:ulid() SET name = "Computer Science").id;
 //
 // These would not be automatically populated in production, but input by users
 
-let $cpp_mat4170 = (CREATE ONLY course:ulid() SET name = "Abstract Algebra I").id;
-let $cpp_sta2100 = (CREATE ONLY course:ulid() SET name = "Intro to Statistics").id;
-let $cpp_phl2040 = (CREATE ONLY course:ulid() SET name = "Ethical Problems in Contemporary Life").id;
-let $cpp_bio1110 = (CREATE ONLY course:ulid() SET name = "Intro to Life Science").id;
-let $cpp_cs3750 = (CREATE ONLY course:ulid() SET name = "Computers and Society").id;
-let $cpp_cs2410 = (CREATE ONLY course:ulid() SET name = "Fundamentals of Data Science").id;
-let $cpp_cs2600 = (CREATE ONLY course:ulid() SET name = "Systems Programming").id;
+let $cpp_mat4170 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "MAT 4170",
+	name = "Abstract Algebra I"
+).id;
+
+let $cpp_sta2100 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "STA 2100",
+	name = "Intro to Statistics"
+).id;
+
+let $cpp_phl2040 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "PHL 2040",
+	name = "Ethical Problems in Contemporary Life"
+).id;
+
+let $cpp_bio1110 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "BIO 1110",
+	name = "Intro to Life Science"
+).id;
+
+let $cpp_cs3750 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "CS 3750",
+	name = "Computers and Society"
+).id;
+
+let $cpp_cs2410 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "CS 2410",
+	name = "Fundamentals of Data Science"
+).id;
+
+let $cpp_cs2600 = (CREATE ONLY course:ulid() SET
+	university = $cpp,
+	code = "CS 2600",
+	name = "Systems Programming"
+).id;
+
 
 // --------------------------------------------------------
 // Users
@@ -48,7 +83,7 @@ let $jacob = (CREATE ONLY user:ulid() SET
 
 let $amy = (CREATE ONLY user:ulid() SET
 	name.first = 'Amy',
-	name.last = 'Ngyuen',
+	name.last = 'Nguyen',
 	username = 'choobipanda',
 	university = $cpp,
 	major = $cs,
@@ -88,7 +123,7 @@ RELATE $tigi->follows->$jacob;
 // --------------------------------------------------------
 // Activity
 
-CREATE activity:ulid() SET
-	user = $jacob,
-	course = $mat_4170
-	assignment = ""
+// CREATE activity:ulid() SET
+// 	user = $jacob,
+// 	course = $mat_4170
+// 	assignment = ""
