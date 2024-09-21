@@ -6,7 +6,6 @@ use std::{
     fs,
     net::SocketAddr,
     path::{Path, PathBuf},
-    str::FromStr,
 };
 
 use clap::Parser;
@@ -15,21 +14,10 @@ use color_eyre::eyre::{bail, OptionExt, Result, WrapErr};
 
 use dirs_next;
 
-use err::LogMapErr;
+use surrealdb::Surreal;
 
-use surrealdb::{
-    engine::{
-        local::{Db, Mem},
-        remote::ws::{Client, Ws},
-    },
-    opt::auth::Root,
-    Error, Surreal,
-};
-
-use tracing::{debug, info, instrument, level_filters::LevelFilter};
+use tracing::{info, instrument, level_filters::LevelFilter};
 use tracing_appender::non_blocking::WorkerGuard;
-use tracing_error::ErrorLayer;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, Layer};
 
 mod db;
 mod err;
@@ -197,9 +185,10 @@ async fn main() -> Result<()> {
                 routes::user,
                 routes::user_following,
                 routes::user_followers,
+                routes::user_search,
+                routes::user_activity,
                 routes::uni_students,
                 routes::course_search,
-                routes::user_search,
                 routes::uni_search,
                 routes::major_search,
             ],

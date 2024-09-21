@@ -10,4 +10,6 @@ surql:
 import file:
     surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main {{file}}
 
-
+reset-data:
+    just import surql/clear_all.surql
+    just import surql/test_data.surql

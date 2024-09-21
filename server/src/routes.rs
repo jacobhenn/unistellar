@@ -1,25 +1,19 @@
 //! Defines API route handlers via Rocket
 
-use crate::structs::{Course, Name, USId};
+use crate::structs::{ActivityData, Name, USId};
 
 use super::{err::LogMapErr, structs::User, State};
 
-use std::{borrow::Cow, error::Error, fmt::Display, str::FromStr};
+use std::str::FromStr;
 
-use color_eyre::eyre::{ErrReport, OptionExt, WrapErr};
+use color_eyre::eyre::WrapErr;
 
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
-use rocket::{http::Status, request::FromParam, response::Responder};
+use rocket::{http::Status, request::FromParam};
 
-use serde::{de::DeserializeOwned, Serialize};
+use surrealdb::{engine::remote::ws::Client, Surreal};
 
-use surrealdb::{
-    engine::remote::ws::Client,
-    opt::{IntoQuery, QueryResult},
-    Surreal,
-};
-
-use tracing::{debug, instrument, trace};
+use tracing::{debug, instrument};
 
 use ulid::Ulid;
 
@@ -374,6 +368,71 @@ pub async fn major_search(
         search_table::<1, SearchResult>(&state.db, &query, search, |major| [&major.name]).await?;
 
     Ok(serde_json::to_string(&search_results)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// GET "/api/user/<id>/activity": list of activities registered by the current user.
+///
+/// Example:
+/// ```json
+/// [
+///   {
+///     "course": {
+///       "id": "01J89D8KK39ERH28YH788WJR0R",
+///       "code": "CS 2600"
+///     },
+///     "assignment": "Quiz 1",
+///     "data": {
+///       "kind": "Completed"
+///     }
+///   },
+///   {
+///     "course": {
+///       "id": "01J89D8KK39ERH28YH788WJR0R",
+///       "code": "CS 2600"
+///     },
+///     "assignment": "Quiz 1",
+///     "data": {
+///       "kind": "WorkedOn",
+///       "duration": 1500
+///     }
+///   }
+/// ]
+/// ```
+#[instrument(skip(state))]
+#[get("/user/<id_param>/activity", rank = 3)]
+pub async fn user_activity(
+    state: &rocket::State<State<Client>>,
+    id_param @ UlidParam(id): UlidParam,
+) -> Result<String, Status> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct CourseData {
+        id: USId,
+        code: String,
+    }
+
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct Activity {
+        course: CourseData,
+        assignment: String,
+        data: ActivityData,
+    }
+
+    let query = format!(
+        "SELECT course.id, course.code, assignment, data FROM activity WHERE user == user:{id}"
+    );
+
+    debug!("query: {query}");
+
+    let activity: Vec<Activity> = state
+        .db
+        .query(query)
+        .await
+        .and_then(|mut resp| resp.take(0))
+        .log_map_err(|_| Status::InternalServerError)?;
+
+    Ok(serde_json::to_string(&activity)
         .wrap_err("failed to serialize response")
         .log_map_err(|_| Status::InternalServerError)?)
 }

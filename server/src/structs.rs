@@ -1,5 +1,9 @@
 //! Structure definitions that map onto the database schema.
 
+use chrono::TimeDelta;
+
+use serde_with::{serde_as, DurationSeconds};
+
 use ulid::Ulid;
 
 /// See [`USId`]
@@ -59,4 +63,24 @@ pub struct User {
 pub struct Course {
     pub id: USId,
     pub name: String,
+}
+
+/// A kind/state of an activity; e.g. "planning" or "completed"
+#[serde_as]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+#[serde(tag = "kind")]
+pub enum ActivityData {
+    /// The user is planning to do an activity
+    Planning,
+
+    /// The user has completed an activity
+    Completed,
+
+    /// The user has worked on an activity
+    WorkedOn {
+        /// The duration for which the user worked on the activity. Serialized as a number of
+        /// seconds.
+        #[serde_as(as = "DurationSeconds<i64>")]
+        duration_secs: TimeDelta,
+    },
 }
