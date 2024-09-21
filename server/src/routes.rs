@@ -8,6 +8,7 @@ use std::{borrow::Cow, error::Error, fmt::Display, str::FromStr};
 
 use color_eyre::eyre::{ErrReport, OptionExt, WrapErr};
 
+use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
 use rocket::{http::Status, request::FromParam, response::Responder};
 
 use serde::{de::DeserializeOwned, Serialize};
@@ -181,23 +182,14 @@ pub async fn uni_students(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// Calculates distance between strings `a` and `b` in a slightly cursed way: computes Levenshtein
-/// distance and subtracts the absolute difference between the lengths
-fn cursed_string_distance(a: &impl AsRef<[u8]>, b: &impl AsRef<[u8]>) -> i32 {
-    let (a, b) = (a.as_ref(), b.as_ref());
-
-    triple_accel::levenshtein_exp(a, b) as i32 - (a.len() as i32 - b.len() as i32).abs()
-}
-
-async fn search_table<T, Key>(
+async fn search_table<const N: usize, T>(
     db: &Surreal<Client>,
     query: &str,
-    get_key: impl Fn(&T) -> Key,
-    get_id: impl Fn(&T) -> USId,
-) -> Result<Vec<USId>, Status>
+    search: &str,
+    get_keys: impl Fn(&T) -> [&str; N],
+) -> Result<Vec<T>, Status>
 where
     T: serde::de::DeserializeOwned,
-    Key: Ord,
 {
     let mut results: Vec<T> = db
         .query(query)
@@ -205,20 +197,38 @@ where
         .and_then(|mut resp| resp.take(0))
         .log_map_err(|_| Status::InternalServerError)?;
 
-    results.sort_by_cached_key(|result| get_key(result));
+    let matcher = SkimMatcherV2::default();
 
-    let mut result_ids: Vec<USId> = Vec::with_capacity(results.len());
-    result_ids.extend(results.into_iter().map(|result| get_id(&result)));
+    results.sort_by_cached_key(|result| {
+        std::cmp::Reverse(
+            get_keys(result)
+                .into_iter()
+                .map(|k| matcher.fuzzy_match(k, search).unwrap_or(i64::MIN))
+                .max()
+                .unwrap_or(i64::MIN),
+        )
+    });
 
-    Ok(result_ids)
+    Ok(results)
 }
 
-/// GET "/api/course/search/<search>": list of IDs of courses whose names match the given search string,
-/// sorted in increasing order of [`cursed_string_distance`] with the search string.
+/// GET "/api/course/search/<search>": list of courses whose names match the given search string,
+/// sorted in order of search relevance.
 ///
 /// Example:
 /// ```json
-/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// [
+///   {
+///     "id": "01J88T2H1G3XHEN8J9ME231QGM",
+///     "name": "Intro to Life Science",
+///     "code": "BIO 1110"
+///   },
+///   {
+///     "id": "01J88T2H1HTXB53ZHRQ375RMJF",
+///     "name": "Fundamentals of Data Science",
+///     "code": "CS 2410"
+///   }
+/// ]
 /// ```
 #[instrument(skip(state))]
 #[get("/course/search/<search_param>")]
@@ -236,18 +246,9 @@ pub async fn course_search(
     let query =
         format!("SELECT id, name, code FROM course WHERE name ~ '{search}' OR code ~ '{search}'");
 
-    let search_results = search_table::<SearchResult, _>(
-        &state.db,
-        &query,
-        |course| {
-            [&course.name, &course.code]
-                .into_iter()
-                .map(|key| cursed_string_distance(key, &search))
-                .min()
-                .expect("iterator is not empty")
-        },
-        |course| course.id,
-    )
+    let search_results = search_table::<2, SearchResult>(&state.db, &query, search, |course| {
+        [&course.name, &course.code]
+    })
     .await?;
 
     Ok(serde_json::to_string(&search_results)
@@ -255,12 +256,21 @@ pub async fn course_search(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/api/user/search/<search>": list of IDs of users whose names match the given search string,
+/// GET "/api/user/search/<search>": list of users whose names match the given search string,
 /// sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:
 /// ```json
-/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// [
+///   {
+///     "id": "01J88T2H1HJSC58YDZTAK07CM2",
+///     "username": "choobipanda",
+///     "name": {
+///       "first": "Amy",
+///       "last": "Nguyen"
+///     }
+///   }
+/// ]
 /// ```
 #[instrument(skip(state))]
 #[get("/user/search/<search_param>", rank = 2)]
@@ -282,18 +292,9 @@ pub async fn user_search(
 
     debug!("query: `{query}`");
 
-    let search_results = search_table::<SearchResult, _>(
-        &state.db,
-        &query,
-        |user| {
-            [&user.username, &user.name.first, &user.name.last]
-                .into_iter()
-                .map(|s| cursed_string_distance(s, &search))
-                .min()
-                .expect("iterator is non-empty")
-        },
-        |user| user.id,
-    )
+    let search_results = search_table::<3, SearchResult>(&state.db, &query, search, |user| {
+        [&user.username, &user.name.first, &user.name.last]
+    })
     .await?;
 
     Ok(serde_json::to_string(&search_results)
@@ -301,12 +302,21 @@ pub async fn user_search(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/api/uni/search/<search>": list of IDs of universities whose names match the given search
+/// GET "/api/uni/search/<search>": list of universities whose names match the given search
 /// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:
 /// ```json
-/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// [
+///   {
+///     "id": "01J88T2H1FKEY2GS8VTZEZRESM",
+///     "name": "Lancaster University"
+///   },
+///   {
+///     "id": "01J88T2H1CF3QF9BAAA5TG07TB",
+///     "name": "Cal Poly Pomona"
+///   }
+/// ]
 /// ```
 #[instrument(skip(state))]
 #[get("/uni/search/<search_param>", rank = 2)]
@@ -322,25 +332,29 @@ pub async fn uni_search(
 
     let query = format!("SELECT id, name FROM university WHERE name ~ '{search}'");
 
-    let search_results = search_table::<SearchResult, _>(
-        &state.db,
-        &query,
-        |uni| cursed_string_distance(&uni.name, &search),
-        |uni| uni.id,
-    )
-    .await?;
+    let search_results =
+        search_table::<1, SearchResult>(&state.db, &query, search, |uni| [&uni.name]).await?;
 
     Ok(serde_json::to_string(&search_results)
         .wrap_err("failed to serialize response")
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/api/major/search/<search>": list of IDs of majors whose names match the given search
+/// GET "/api/major/search/<search>": list of majors whose names match the given search
 /// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
 ///
 /// Example:
 /// ```json
-/// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
+/// [
+///   {
+///     "id": "01J88T2H1FSZ235CW69M9TA4PM",
+///     "name": "Computer Science"
+///   },
+///   {
+///     "id": "01J88T2H1F400Y58VFHYXAWTD0",
+///     "name": "Mathematics"
+///   }
+/// ]
 /// ```
 #[instrument(skip(state))]
 #[get("/major/search/<search_param>", rank = 2)]
@@ -356,13 +370,8 @@ pub async fn major_search(
 
     let query = format!("SELECT id, name FROM major WHERE name ~ '{search}'");
 
-    let search_results = search_table::<SearchResult, _>(
-        &state.db,
-        &query,
-        |major| cursed_string_distance(&major.name, &search),
-        |major| major.id,
-    )
-    .await?;
+    let search_results =
+        search_table::<1, SearchResult>(&state.db, &query, search, |major| [&major.name]).await?;
 
     Ok(serde_json::to_string(&search_results)
         .wrap_err("failed to serialize response")

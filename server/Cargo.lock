@@ -4269,6 +4269,7 @@ dependencies = [
  "clap",
  "color-eyre",
  "dirs-next",
+ "fuzzy-matcher",
  "rocket",
  "serde",
  "serde_json",
