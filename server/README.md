@@ -2,7 +2,7 @@
 
 ## API
 
-The entire API is defined and documented in [`src/routes.rs`](server/src/routes.rs).
+The entire API is defined and documented in [`src/routes.rs`](src/routes.rs).
 
 ## Development
 
