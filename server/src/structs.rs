@@ -79,8 +79,11 @@ pub enum ActivityData {
     /// The user has worked on an activity
     WorkedOn {
         /// The duration for which the user worked on the activity. Serialized as a number of
-        /// seconds.
+        /// seconds. This will appear as `duration_secs` in serialized JSON due to the rename
+        /// attribute. This is for readability as JSON has no native duration type and I'm just
+        /// sending it as a number of seconds.
         #[serde_as(as = "DurationSeconds<i64>")]
-        duration_secs: TimeDelta,
+        #[serde(rename(serialize = "duration_secs"))]
+        duration: TimeDelta,
     },
 }

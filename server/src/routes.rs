@@ -8,10 +8,15 @@ use std::str::FromStr;
 
 use color_eyre::eyre::WrapErr;
 
+use chrono::{DateTime, Utc};
+
 use fuzzy_matcher::{skim::SkimMatcherV2, FuzzyMatcher};
+
 use rocket::{http::Status, request::FromParam};
 
-use surrealdb::{engine::remote::ws::Client, Surreal};
+use surrealdb::{engine::remote::ws::Client, opt::QueryResult, Surreal};
+
+use serde::de::DeserializeOwned;
 
 use tracing::{debug, instrument};
 
@@ -34,7 +39,7 @@ impl<'a> FromParam<'a> for UlidParam {
 
 /// Wrapper which guarantees query safety when being parsed from an URL. Specifically, its
 /// implementation of FromParam validates that it consists only of ASCII alphanumeric and whitespace
-/// characters.
+/// characters (e.g. no quotes or backslashes that could escape from a string).
 #[derive(Debug)]
 struct CleanStr<'a>(&'a str);
 
@@ -53,11 +58,56 @@ impl<'a> FromParam<'a> for CleanStr<'a> {
     }
 }
 
+/// Helper function for doing a query on the database and transforming errors to log messages +
+/// HTTP 500 status.
+async fn single_query<T>(db: &Surreal<Client>, query: &str) -> Result<T, Status>
+where
+    usize: QueryResult<T>,
+    T: DeserializeOwned,
+{
+    Ok(db
+        .query(query)
+        .await
+        .and_then(|mut resp| resp.take(0))
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// Helper function for performing fuzzy search on a particular column or columns of a table in the
+/// database.
+async fn search_table<const N: usize, T>(
+    db: &Surreal<Client>,
+    query: &str,
+    search: &str,
+    get_keys: impl Fn(&T) -> [&str; N],
+) -> Result<Vec<T>, Status>
+where
+    T: serde::de::DeserializeOwned,
+{
+    let mut results: Vec<T> = single_query(db, query).await?;
+
+    let matcher = SkimMatcherV2::default();
+
+    results.sort_by_cached_key(|result| {
+        std::cmp::Reverse(
+            get_keys(result)
+                .into_iter()
+                .map(|k| matcher.fuzzy_match(k, search).unwrap_or(i64::MIN))
+                .max()
+                .unwrap_or(i64::MIN),
+        )
+    });
+
+    Ok(results)
+}
+
 // -------------------------------------------------------------------------------------------------
 // SAFETY: you will see me interpolate captured URL fragments into query strings in the following
 // route handlers. As long as the type of the URL fragment has a restrictive syntax (e.g. a ULID),
 // this does not allow for query injection as Rocket parses the fragments before the handler
 // function is even called, and an error at that point will result in a 404.
+//
+// When interpolating general strings, I use `CleanStr`, which automatically validates that it is
+// clean during the url parsing phase.
 // -------------------------------------------------------------------------------------------------
 
 /// GET "/api/user/<id>": data of user with a given user ID. If a user with the given ID does
@@ -83,11 +133,10 @@ pub async fn user(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
 ) -> Result<String, Status> {
-    let user: Option<User> = state
-        .db
-        .select(("user", id.to_string()))
-        .await
-        .log_map_err(|_| Status::InternalServerError)?
+    let query = format!("SELECT * FROM ONLY user:`{id}`");
+
+    let user = single_query::<Option<User>>(&state.db, &query)
+        .await?
         .ok_or(Status::NotFound)?;
 
     Ok(serde_json::to_string(&user)
@@ -108,14 +157,9 @@ pub async fn user_following(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
 ) -> Result<String, Status> {
-    let query = format!("SELECT VALUE out FROM follows WHERE in=user:{id}");
+    let query = format!("SELECT VALUE out FROM follows WHERE in=user:`{id}`");
 
-    let user_ids: Vec<USId> = state
-        .db
-        .query(query)
-        .await
-        .and_then(|mut resp| resp.take(0))
-        .log_map_err(|_| Status::InternalServerError)?;
+    let user_ids: Vec<USId> = single_query(&state.db, &query).await?;
 
     Ok(serde_json::to_string(&user_ids)
         .wrap_err("failed to serialize response")
@@ -135,14 +179,9 @@ pub async fn user_followers(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
 ) -> Result<String, Status> {
-    let query = format!("SELECT VALUE in FROM follows WHERE out=user:{id}");
+    let query = format!("SELECT VALUE in FROM follows WHERE out=user:`{id}`");
 
-    let user_ids: Vec<USId> = state
-        .db
-        .query(query)
-        .await
-        .and_then(|mut resp| resp.take(0))
-        .log_map_err(|_| Status::InternalServerError)?;
+    let user_ids: Vec<USId> = single_query(&state.db, &query).await?;
 
     Ok(serde_json::to_string(&user_ids)
         .wrap_err("failed to serialize response")
@@ -162,48 +201,13 @@ pub async fn uni_students(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
 ) -> Result<String, Status> {
-    let query = format!("SELECT VALUE id FROM user WHERE university == university:{id}");
+    let query = format!("SELECT VALUE id FROM user WHERE university == university:`{id}`");
 
-    let user_ids: Vec<USId> = state
-        .db
-        .query(query)
-        .await
-        .and_then(|mut resp| resp.take(0))
-        .log_map_err(|_| Status::InternalServerError)?;
+    let user_ids: Vec<USId> = single_query(&state.db, &query).await?;
 
     Ok(serde_json::to_string(&user_ids)
         .wrap_err("failed to serialize response")
         .log_map_err(|_| Status::InternalServerError)?)
-}
-
-async fn search_table<const N: usize, T>(
-    db: &Surreal<Client>,
-    query: &str,
-    search: &str,
-    get_keys: impl Fn(&T) -> [&str; N],
-) -> Result<Vec<T>, Status>
-where
-    T: serde::de::DeserializeOwned,
-{
-    let mut results: Vec<T> = db
-        .query(query)
-        .await
-        .and_then(|mut resp| resp.take(0))
-        .log_map_err(|_| Status::InternalServerError)?;
-
-    let matcher = SkimMatcherV2::default();
-
-    results.sort_by_cached_key(|result| {
-        std::cmp::Reverse(
-            get_keys(result)
-                .into_iter()
-                .map(|k| matcher.fuzzy_match(k, search).unwrap_or(i64::MIN))
-                .max()
-                .unwrap_or(i64::MIN),
-        )
-    });
-
-    Ok(results)
 }
 
 /// GET "/api/course/search/<search>": list of courses whose names match the given search string,
@@ -251,7 +255,7 @@ pub async fn course_search(
 }
 
 /// GET "/api/user/search/<search>": list of users whose names match the given search string,
-/// sorted in increasing order of [`cursed_string_distance`] with the search string.
+/// sorted in increasing order of fuzzy distance with the search string.
 ///
 /// Example:
 /// ```json
@@ -297,7 +301,7 @@ pub async fn user_search(
 }
 
 /// GET "/api/uni/search/<search>": list of universities whose names match the given search
-/// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
+/// string, sorted in increasing order of fuzzy distance with the search string.
 ///
 /// Example:
 /// ```json
@@ -335,7 +339,7 @@ pub async fn uni_search(
 }
 
 /// GET "/api/major/search/<search>": list of majors whose names match the given search
-/// string, sorted in increasing order of [`cursed_string_distance`] with the search string.
+/// string, sorted in increasing order of fuzzy distance with the search string.
 ///
 /// Example:
 /// ```json
@@ -372,12 +376,14 @@ pub async fn major_search(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/api/user/<id>/activity": list of activities registered by the current user.
+/// GET "/api/user/<id>/activity": list of activities registered by the given user, sorted in
+/// decreasing order of recency.
 ///
 /// Example:
 /// ```json
 /// [
 ///   {
+///     "time": "2024-09-21T04:25:56.585787586Z",
 ///     "course": {
 ///       "id": "01J89D8KK39ERH28YH788WJR0R",
 ///       "code": "CS 2600"
@@ -388,6 +394,7 @@ pub async fn major_search(
 ///     }
 ///   },
 ///   {
+///     "time": "2024-09-21T04:25:56.585461814Z",
 ///     "course": {
 ///       "id": "01J89D8KK39ERH28YH788WJR0R",
 ///       "code": "CS 2600"
@@ -395,7 +402,7 @@ pub async fn major_search(
 ///     "assignment": "Quiz 1",
 ///     "data": {
 ///       "kind": "WorkedOn",
-///       "duration": 1500
+///       "duration_secs": 1500
 ///     }
 ///   }
 /// ]
@@ -414,23 +421,20 @@ pub async fn user_activity(
 
     #[derive(serde::Serialize, serde::Deserialize)]
     struct Activity {
+        time: DateTime<Utc>,
         course: CourseData,
         assignment: String,
         data: ActivityData,
     }
 
     let query = format!(
-        "SELECT course.id, course.code, assignment, data FROM activity WHERE user == user:{id}"
+        "SELECT time, course.id, course.code, assignment, data
+        FROM activity
+        WHERE user == user:`{id}`
+        ORDER BY time DESC"
     );
 
-    debug!("query: {query}");
-
-    let activity: Vec<Activity> = state
-        .db
-        .query(query)
-        .await
-        .and_then(|mut resp| resp.take(0))
-        .log_map_err(|_| Status::InternalServerError)?;
+    let activity: Vec<Activity> = single_query(&state.db, &query).await?;
 
     Ok(serde_json::to_string(&activity)
         .wrap_err("failed to serialize response")
