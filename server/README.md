@@ -1,5 +1,9 @@
 # UniStellar
 
+## API
+
+The entire API is defined and documented in [`src/routes.rs`](server/src/routes.rs).
+
 ## Development
 
 ### Starting the database
@@ -16,7 +20,7 @@ Run the equivalent of the following command to start the SurrealDB database:
 # if you are connecting to an on-disk database, only put `--user root --pass root` the first time
 #     you connect to the database. initializing the root user is not required on subsequent accesses
 
-surreal start --endpoint http://127.0.0.1:8000 [--user root --pass root] [PATH]
+surreal start rocksdb://[PATH] -A -b 127.0.0.1:8000 [--user root --pass root]
 ```
 
 Run the following command to load test data from `server/test_data.surql` into the database (make sure the database is running on the correct port):
