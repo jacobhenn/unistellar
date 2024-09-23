@@ -2,3 +2,4 @@ server/target
 server/.direnv
 server/history.txt
 server/zellij.kdl
+server/bacon.toml
