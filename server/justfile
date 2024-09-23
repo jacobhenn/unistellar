@@ -5,10 +5,10 @@ run-db:
     surreal start rocksdb://~/.local/share/unistellar/db -A -b 127.0.0.1:8000
 
 surql:
-    surreal sql --endpoint http://127.0.0.1:8000 --namespace unistellar --database main --pretty
+    surreal sql --endpoint http://127.0.0.1:8000 --namespace unistellar --database main --pretty -u root -p root
         
 import file:
-    surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main {{file}}
+    surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main {{file}} -u root -p root
 
 reset-data:
     just import surql/clear_all.surql

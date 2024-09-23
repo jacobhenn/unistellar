@@ -78,7 +78,9 @@ LET $jacob = (CREATE ONLY user:ulid() SET
 	username = 'jacobhenn',
 	university = $cpp,
 	major = $math,
-	grad_year = 2026
+	grad_year = 2026,
+	stats.assignments_completed = 0,
+	stats.secs_worked = 0
 ).id;
 
 LET $amy = (CREATE ONLY user:ulid() SET
@@ -87,7 +89,9 @@ LET $amy = (CREATE ONLY user:ulid() SET
 	username = 'choobipanda',
 	university = $cpp,
 	major = $cs,
-	grad_year = 2026
+	grad_year = 2026,
+	stats.assignments_completed = 0,
+	stats.secs_worked = 0
 ).id;
 
 LET $tigi = (CREATE ONLY user:ulid() SET
@@ -96,7 +100,9 @@ LET $tigi = (CREATE ONLY user:ulid() SET
 	username = 'tigi',
 	university = $lu,
 	major = $cs,
-	grad_year = 2026
+	grad_year = 2026,
+	stats.assignments_completed = 0,
+	stats.secs_worked = 0
 ).id;
 
 // --------------------------------------------------------
@@ -121,6 +127,22 @@ RELATE $amy->follows->$tigi;
 RELATE $tigi->follows->$jacob;
 
 // --------------------------------------------------------
+// Stat hooks
+
+DEFINE EVENT update_stats ON TABLE activity
+	WHEN $before = NONE
+	THEN {
+		IF $after.data.kind = 'WorkedOn'
+		{
+			UPDATE $after.user SET stats.secs_worked += $after.data.duration_secs;
+		} 
+		ELSE IF $after.data.kind = 'Completed'
+		{
+			UPDATE $after.user SET stats.assignments_completed += 1;
+		};
+	};
+
+// --------------------------------------------------------
 // Activity
 
 CREATE activity:ulid() SET
@@ -137,7 +159,7 @@ CREATE activity:ulid() SET
 	course = $cpp_cs2600,
 	assignment = 'Quiz 1',
 	data.kind = 'WorkedOn',
-	data.duration = duration::secs(duration::from::mins(25))
+	data.duration_secs = duration::secs(25m)
 ;
 
 CREATE activity:ulid() SET
