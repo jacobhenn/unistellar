@@ -188,6 +188,28 @@ pub async fn user_followers(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
+/// GET "/api/user/<id>/courses": list of IDs of courses that the given user is taking. If a user
+/// with the given id does not exist, returns 404.
+///
+/// Example:
+/// ```json
+/// ["01J7YXMV1FSVAERRYEPR93NRX9","01J7YXMV1FZ94VHC13RCTRZM09"]
+/// ```
+#[instrument(skip(state))]
+#[get("/user/<id_param>/courses")]
+pub async fn user_courses(
+    state: &rocket::State<State<Client>>,
+    id_param @ UlidParam(id): UlidParam,
+) -> Result<String, Status> {
+    let query = format!("SELECT VALUE out FROM takes_course WHERE in=user:`{id}`");
+
+    let user_ids: Vec<USId> = single_query(&state.db, &query).await?;
+
+    Ok(serde_json::to_string(&user_ids)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
 /// GET "/api/university/<id>/students": list of IDs of users who attend the given university. If
 /// the given university ID does not exist, returns 404.
 ///
