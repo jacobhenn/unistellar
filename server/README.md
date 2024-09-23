@@ -28,8 +28,10 @@ Run the following command to load test data from `server/test_data.surql` into t
 ```shell
 # current directory: "server"
 
-surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main test_data.surql
+surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main surql/test_data.surql -u root -p root
 ```
+
+To clear the data in the server, run the same command but replace `test_data.surql` with `clear_all.surql`
 
 ### Launching the server
 
