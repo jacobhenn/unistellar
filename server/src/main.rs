@@ -188,6 +188,7 @@ async fn main() -> Result<()> {
                 routes::user_courses,
                 routes::user_search,
                 routes::user_activity,
+                routes::user_stats,
                 routes::uni_students,
                 routes::course_search,
                 routes::uni_search,

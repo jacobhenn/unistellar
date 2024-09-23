@@ -83,7 +83,19 @@ pub enum ActivityData {
         /// attribute. This is for readability as JSON has no native duration type and I'm just
         /// sending it as a number of seconds.
         #[serde_as(as = "DurationSeconds<i64>")]
-        #[serde(rename(serialize = "duration_secs"))]
+        #[serde(rename = "duration_secs")]
         duration: TimeDelta,
     },
+}
+
+#[serde_as]
+#[derive(serde::Deserialize, serde::Serialize, Debug, Clone)]
+pub struct Stats {
+    /// The total number of assignments that the user has completed.
+    pub assignments_completed: usize,
+
+    /// The total duration that the user has worked on all activities.
+    #[serde_as(as = "DurationSeconds<i64>")]
+    #[serde(rename = "secs_worked")]
+    pub duration_worked: TimeDelta,
 }

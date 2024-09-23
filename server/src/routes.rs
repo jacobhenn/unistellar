@@ -1,6 +1,6 @@
 //! Defines API route handlers via Rocket
 
-use crate::structs::{ActivityData, Name, USId};
+use crate::structs::{ActivityData, Name, Stats, USId};
 
 use super::{err::LogMapErr, structs::User, State};
 
@@ -206,6 +206,28 @@ pub async fn user_courses(
     let user_ids: Vec<USId> = single_query(&state.db, &query).await?;
 
     Ok(serde_json::to_string(&user_ids)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// GET "/api/user/<id>/stats": statistics of the given user related to their activity.
+///
+/// Example:
+/// ```json
+/// ```
+#[instrument(skip(state))]
+#[get("/user/<id_param>/stats", rank = 3)]
+pub async fn user_stats(
+    state: &rocket::State<State<Client>>,
+    id_param @ UlidParam(id): UlidParam,
+) -> Result<String, Status> {
+    let query = format!("SELECT VALUE stats FROM ONLY user:`{id}`");
+
+    let stats = single_query::<Option<Stats>>(&state.db, &query)
+        .await?
+        .ok_or(Status::NotFound)?;
+
+    Ok(serde_json::to_string(&stats)
         .wrap_err("failed to serialize response")
         .log_map_err(|_| Status::InternalServerError)?)
 }
