@@ -3,3 +3,4 @@ server/.direnv
 server/history.txt
 server/zellij.kdl
 server/bacon.toml
+server/unistellar-helper.toml

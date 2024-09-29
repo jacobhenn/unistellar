@@ -4480,6 +4480,7 @@ dependencies = [
  "serde_json",
  "serde_with",
  "surrealdb",
+ "toml",
  "tracing",
  "tracing-appender",
  "tracing-error",
