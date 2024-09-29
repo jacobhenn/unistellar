@@ -1,9 +1,4 @@
-use std::{
-    ffi::OsStr,
-    fs,
-    net::SocketAddr,
-    path::{Path, PathBuf},
-};
+use std::{ffi::OsStr, fs, path::PathBuf};
 
 use clap::Parser;
 
