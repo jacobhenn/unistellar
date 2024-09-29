@@ -2,7 +2,7 @@
 
 ## API
 
-The entire API is defined and documented in [`src/routes.rs`](src/routes.rs).
+The entire API is defined and documented in [the wiki](https://github.com/jacobhenn/unistellar/wiki/Internal-API).
 
 ## Development
 
