@@ -68,6 +68,18 @@ LET $cpp_cs2600 = (CREATE ONLY course:ulid() SET
 	name = "Systems Programming"
 ).id;
 
+// --------------------------------------------------------
+// Assignments
+
+LET $cpp_mat4170_hw2 = (CREATE ONLY assignment:ulid() SET
+	course = $cpp_mat4170,
+	name = "HW 2"
+).id;
+
+LET $cpp_cs2600_quiz1 = (CREATE ONLY assignment:ulid() SET
+	course = $cpp_cs2600,
+	name = "Quiz 1"
+).id;
 
 // --------------------------------------------------------
 // Users
@@ -79,7 +91,10 @@ LET $jacob = (CREATE ONLY user:ulid() SET
 	university = $cpp,
 	major = $math,
 	grad_year = 2026,
-	stats.assignments_completed = 0,
+	assignments_planning = [],
+	assignments_in_progress = [],
+	assignments_completed = [],
+	stats.num_assignments_completed = 0,
 	stats.secs_worked = 0
 ).id;
 
@@ -90,7 +105,10 @@ LET $amy = (CREATE ONLY user:ulid() SET
 	university = $cpp,
 	major = $cs,
 	grad_year = 2026,
-	stats.assignments_completed = 0,
+	assignments_planning = [],
+	assignments_in_progress = [],
+	assignments_completed = [],
+	stats.num_assignments_completed = 0,
 	stats.secs_worked = 0
 ).id;
 
@@ -101,7 +119,10 @@ LET $tigi = (CREATE ONLY user:ulid() SET
 	university = $lu,
 	major = $cs,
 	grad_year = 2026,
-	stats.assignments_completed = 0,
+	assignments_planning = [],
+	assignments_in_progress = [],
+	assignments_completed = [],
+	stats.num_assignments_completed = 0,
 	stats.secs_worked = 0
 ).id;
 
@@ -127,29 +148,13 @@ RELATE $amy->follows->$tigi;
 RELATE $tigi->follows->$jacob;
 
 // --------------------------------------------------------
-// Stat hooks
-
-DEFINE EVENT update_stats ON TABLE activity
-	WHEN $before = NONE
-	THEN {
-		IF $after.data.kind = 'WorkedOn'
-		{
-			UPDATE $after.user SET stats.secs_worked += $after.data.duration_secs;
-		} 
-		ELSE IF $after.data.kind = 'Completed'
-		{
-			UPDATE $after.user SET stats.assignments_completed += 1;
-		};
-	};
-
-// --------------------------------------------------------
 // Activity
 
 CREATE activity:ulid() SET
 	user = $jacob,
 	time = time::now(),
 	course = $cpp_mat4170,
-	assignment = 'HW 2',
+	assignment = $cpp_mat4170_hw2,
 	data.kind = 'Planning'
 ;
 
@@ -157,7 +162,7 @@ CREATE activity:ulid() SET
 	user = $amy,
 	time = time::now(),
 	course = $cpp_cs2600,
-	assignment = 'Quiz 1',
+	assignment = $cpp_cs2600_quiz1,
 	data.kind = 'WorkedOn',
 	data.duration_secs = duration::secs(25m)
 ;
@@ -166,6 +171,6 @@ CREATE activity:ulid() SET
 	user = $amy,
 	time = time::now(),
 	course = $cpp_cs2600,
-	assignment = 'Quiz 1',
+	assignment = $cpp_cs2600_quiz1,
 	data.kind = 'Completed'
 ;

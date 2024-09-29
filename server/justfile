@@ -12,4 +12,5 @@ import file:
 
 reset-data:
     just import surql/clear_all.surql
+    just import surql/setup_tables.surql
     just import surql/test_data.surql

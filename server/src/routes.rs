@@ -214,6 +214,10 @@ pub async fn user_courses(
 ///
 /// Example:
 /// ```json
+/// {
+///   "assignments_completed": 1,
+///   "secs_worked": 1500
+/// }
 /// ```
 #[instrument(skip(state))]
 #[get("/user/<id_param>/stats", rank = 3)]
@@ -232,7 +236,50 @@ pub async fn user_stats(
         .log_map_err(|_| Status::InternalServerError)?)
 }
 
-/// GET "/api/university/<id>/students": list of IDs of users who attend the given university. If
+/// GET "/api/user/<id>/assignment_statuses": lists of IDs of assignments planned, in progress, and
+/// completed by the user with the given ID.
+///
+/// Example:
+/// ```json
+/// {
+///   "assignments_planning": [],
+///   "assignments_in_progress": [],
+///   "assignments_completed": [
+///     "01J8Y4FVJ4X6KZ8MDQZ7Y74KJM"
+///   ]
+/// }
+/// ```
+#[instrument(skip(state))]
+#[get("/user/<id_param>/assignment_statuses", rank = 3)]
+pub async fn user_assignment_statuses(
+    state: &rocket::State<State<Client>>,
+    id_param @ UlidParam(id): UlidParam,
+) -> Result<String, Status> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct AssignmentStatuses {
+        assignments_planning: Vec<USId>,
+        assignments_in_progress: Vec<USId>,
+        assignments_completed: Vec<USId>,
+    }
+
+    let query = format!(
+        "SELECT
+            assignments_planning,
+            assignments_in_progress,
+            assignments_completed
+        FROM ONLY user:`{id}`"
+    );
+
+    let statuses = single_query::<Option<AssignmentStatuses>>(&state.db, &query)
+        .await?
+        .ok_or(Status::NotFound)?;
+
+    Ok(serde_json::to_string(&statuses)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// GET "/api/uni/<id>/students": list of IDs of users who attend the given university. If
 /// the given university ID does not exist, returns 404.
 ///
 /// Example:
@@ -240,7 +287,7 @@ pub async fn user_stats(
 /// ["01J7YZ7MC3C49R19BHX6DTPGJ2","01J7YZ7MC3P44547KT11KHXGJV"]
 /// ```
 #[instrument(skip(state))]
-#[get("/university/<id_param>/students")]
+#[get("/uni/<id_param>/students")]
 pub async fn uni_students(
     state: &rocket::State<State<Client>>,
     id_param @ UlidParam(id): UlidParam,
@@ -292,6 +339,46 @@ pub async fn course_search(
         [&course.name, &course.code]
     })
     .await?;
+
+    Ok(serde_json::to_string(&search_results)
+        .wrap_err("failed to serialize response")
+        .log_map_err(|_| Status::InternalServerError)?)
+}
+
+/// GET "/api/assignment/search/<search>": list of assignments whose names match the given search
+/// string, sorted in order of search relevance.
+///
+/// Example:
+/// ```json
+/// [
+///   {
+///     "id": "01J88T2H1G3XHEN8J9ME231QGM",
+///     "name": "HW 2",
+///   },
+///   {
+///     "id": "01J88T2H1HTXB53ZHRQ375RMJF",
+///     "name": "Quiz 1",
+///   }
+/// ]
+/// ```
+#[instrument(skip(state))]
+#[get("/assignment/search/<search_param>")]
+pub async fn assignment_search(
+    state: &rocket::State<State<Client>>,
+    search_param @ CleanStr(search): CleanStr<'_>,
+) -> Result<String, Status> {
+    #[derive(serde::Serialize, serde::Deserialize)]
+    struct SearchResult {
+        id: USId,
+        course: USId,
+        name: String,
+    }
+
+    let query = format!("SELECT id, course, name FROM assignment WHERE name ~ '{search}'");
+
+    let search_results =
+        search_table::<1, SearchResult>(&state.db, &query, search, |assignment| [&assignment.name])
+            .await?;
 
     Ok(serde_json::to_string(&search_results)
         .wrap_err("failed to serialize response")

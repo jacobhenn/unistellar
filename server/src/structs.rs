@@ -8,9 +8,8 @@ use ulid::Ulid;
 
 /// See [`USId`]
 #[derive(serde::Deserialize, Debug, Clone, Copy)]
-struct IdInner {
-    #[serde(rename = "String")]
-    id: Ulid,
+enum IdInner {
+    String(Ulid),
 }
 
 /// UniStellar ID - basically just a (ULID)[https://github.com/ulid/spec]. This is a wrapper
@@ -34,7 +33,9 @@ impl serde::Serialize for USId {
     where
         S: serde::Serializer,
     {
-        let s = format!("{}", self.id.id);
+        let IdInner::String(id) = self.id;
+
+        let s = format!("{}", id);
         serializer.serialize_str(&s)
     }
 }

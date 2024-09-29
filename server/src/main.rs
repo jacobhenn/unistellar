@@ -189,10 +189,12 @@ async fn main() -> Result<()> {
                 routes::user_search,
                 routes::user_activity,
                 routes::user_stats,
+                routes::user_assignment_statuses,
                 routes::uni_students,
                 routes::course_search,
                 routes::uni_search,
                 routes::major_search,
+                routes::assignment_search,
             ],
         )
         .launch()
