@@ -6,41 +6,25 @@ The entire API is defined and documented in [`src/routes.rs`](src/routes.rs).
 
 ## Development
 
-### Starting the database
+### Configuring the helper
 
-Run the equivalent of the following command to start the SurrealDB database:
+Add a file `unistellar-helper.toml` in `server` and put the following in it:
+```toml
+# the socket address that the surreal database should bind to
+db_addr = "127.0.0.1:8000"
 
-```shell
-# if `PATH` is given, Surreal will persist the database to the given store directory.
-#    i would recommend putting this as a genuine data directory on your machine, e.g.
+# OPTIONAL: the path to persist the database to.
+# i would recommend putting this as a genuine data directory on your machine, e.g.
 #    "~/.local/share/unistellar/db" on Linux, or
 #    "C:\Users\Name\AppData\Roaming\unistellar\db" on Windows.
-# if `PATH` is not given, Surreal will use a temporary in-memory database.
-#
-# if you are connecting to an on-disk database, only put `--user root --pass root` the first time
-#     you connect to the database. initializing the root user is not required on subsequent accesses
-
-surreal start rocksdb://[PATH] -A -b 127.0.0.1:8000 [--user root --pass root]
+# if you want to use a temporary in-memory database, simply comment out this line
+db_store_path = "[see comment]"
 ```
 
-Run the following command to load test data from `server/test_data.surql` into the database (make sure the database is running on the correct port):
+### Using the helper
 
-```shell
-# current directory: "server"
+Run `cargo run --bin helper -- help` *(incl. the space between `--` and `help`)* for a full list of things that the helper can do.
 
-surreal import --conn http://127.0.0.1:8000 --ns unistellar --db main surql/test_data.surql -u root -p root
-```
+Typically to set up development you will want to use `cargo run --bin helper -- run-db` first to set up the database, then `[..] helper -- run-server` to start the server.
 
-To clear the data in the server, run the same command but replace `test_data.surql` with `clear_all.surql`
-
-### Launching the server
-
-If you have Rust installed, launch the server with the following:
-
-```shell
-# current directory: "server"
-
-cargo run -- --db-addr 127.0.0.1:8000
-```
-
-For more information about the command-line arguments taken by the server, do `cargo run -- --help`.
+Use `[..] helper -- reset-data` to reset the database with test data.

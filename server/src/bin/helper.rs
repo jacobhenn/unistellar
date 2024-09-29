@@ -27,7 +27,7 @@ enum Subcommand {
     /// Start a Surql interface attached to the running database
     Surql,
 
-    /// Import the given file into the database
+    /// Import a SurrealQL file into the database
     Import {
         /// File of queries to import. Must be a `.surql` file.
         file: PathBuf,
