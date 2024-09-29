@@ -31,7 +31,7 @@ enum Subcommand {
     /// Initialize schemas and event hooks in the table without clearing old data or loading test data
     SetupTables,
 
-    /// Clear the database and re-insert the test data in `surql/test_data.surql`
+    /// Clear the database and re-insert the test data in `surql/test_data.surql` (also re-sets up tables)
     ResetData,
 }
 
@@ -53,6 +53,12 @@ impl Config {
     }
 }
 
+const SURREAL_CMD: &str = if cfg!(windows) {
+    "surreal.exe"
+} else {
+    "surreal"
+};
+
 macro_rules! run_cmd {
     ($cmd:expr, $($args:expr),*) => {
         {
@@ -67,7 +73,7 @@ macro_rules! run_cmd {
 
 fn import_file(config: &Config, path: impl AsRef<OsStr>) -> eyre::Result<()> {
     run_cmd!(
-        "surreal",
+        SURREAL_CMD,
         ["import", "--conn", &config.db_url()],
         ["--ns", "unistellar", "--db", "main"],
         [path],
@@ -88,14 +94,14 @@ fn main() -> eyre::Result<()> {
         Subcommand::RunServer => run_cmd!("cargo", ["run", "--", "--db-addr", &config.db_addr])?,
         Subcommand::RunDb => {
             run_cmd!(
-                "surreal",
+                SURREAL_CMD,
                 ["start"],
                 config.db_store_url(),
                 ["-A", "-b", &config.db_addr]
             )?;
         }
         Subcommand::Surql => run_cmd!(
-            "surreal",
+            SURREAL_CMD,
             ["sql", "--endpoint", &config.db_url(), "--pretty"],
             ["--ns", "unistellar", "--db", "main"],
             ["-u", "root", "-p", "root"]
