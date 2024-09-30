@@ -14,6 +14,7 @@ use color_eyre::eyre::{bail, OptionExt, Result, WrapErr};
 
 use dirs_next;
 
+use rocket::fs::FileServer;
 use surrealdb::Surreal;
 
 use tracing::{info, instrument, level_filters::LevelFilter};
@@ -21,6 +22,7 @@ use tracing_appender::non_blocking::WorkerGuard;
 
 mod db;
 mod err;
+mod media;
 mod routes;
 mod structs;
 
@@ -32,8 +34,8 @@ enum LogTo {
     /// Print logging to the console through stdout. This is the default in debug mode.
     Stdout,
 
-    /// Write logging to a file (by default, $XDG_DATA_DIR/unistellar-server/logs) This is the
-    /// default in release mode.
+    /// Write logging to a file (by default, {data_dir}/unistellar-server/logs/{datetime}.log).
+    /// This is the default in release mode.
     File,
 }
 
@@ -56,8 +58,12 @@ struct Args {
 
     /// Where to output logs. If absent, defaults to `stdout` if compiled in debug mode or `file`
     /// if compiled in release mode.
-    #[arg(value_enum, long)]
+    #[arg(value_enum, long, short = 'l')]
     log_to: Option<LogTo>,
+
+    /// Where to look for and store media such as profile pictures and course thumbnails.
+    #[arg(long)]
+    media_dir: PathBuf,
 }
 
 /// If the given path exists and is a directory, do nothing. If the given path does not exist,
@@ -197,6 +203,7 @@ async fn main() -> Result<()> {
                 routes::assignment_search,
             ],
         )
+        .mount("/media", FileServer::from(args.media_dir))
         .launch()
         .await
         .wrap_err("server failure")?;

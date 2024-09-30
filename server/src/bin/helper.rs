@@ -13,7 +13,7 @@ struct Args {
 
 #[derive(clap::Subcommand, Debug)]
 enum Subcommand {
-    /// Start the Rust server
+    /// Start the Rust server (by default, sets the media location to 'test_media')
     RunServer,
 
     /// Start the SurrealDB database
@@ -91,7 +91,11 @@ fn main() -> eyre::Result<()> {
     .wrap_err("failed to parse config")?;
 
     match args.subcommand {
-        Subcommand::RunServer => run_cmd!("cargo", ["run", "--", "--db-addr", &config.db_addr])?,
+        Subcommand::RunServer => run_cmd!(
+            "cargo",
+            ["run", "--"],
+            ["--db-addr", &config.db_addr, "--media-dir", "test_media"]
+        )?,
         Subcommand::RunDb => {
             run_cmd!(
                 SURREAL_CMD,

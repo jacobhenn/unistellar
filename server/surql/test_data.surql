@@ -88,6 +88,7 @@ LET $jacob = (CREATE ONLY user:ulid() SET
 	name.first = 'Jacob',
 	name.last = 'Henn',
 	username = 'jacobhenn',
+	profile_picture = '01J8ZTZKNXF4TCQ6AC0P61FBKW',
 	university = $cpp,
 	major = $math,
 	grad_year = 2026,
